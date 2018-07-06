@@ -16,9 +16,9 @@ def proc_file(tcga_file, bcl_file,
               bcl_d0_genes, bcl_d1_genes,
               output_file, same_d=False):
 
-    tcga_data = np.fromfile(tcga_file, dtype=np.float32).reshape(
+    tcga_data = np.fromfile(tcga_file, dtype=np.float64).reshape(
         (len(tcga_d0_genes), len(tcga_d1_genes)))
-    bcl_data = np.fromfile(bcl_file, dtype=np.float32).reshape(
+    bcl_data = np.fromfile(bcl_file, dtype=np.float64).reshape(
         (len(bcl_d0_genes), len(bcl_d1_genes)))
 
     d0_int = set(tcga_d0_genes) & set(bcl_d0_genes)
@@ -67,36 +67,43 @@ if __name__ == '__main__':
 
     parser.add_argument('--output_dir')
 
+    parser.add_argument('--i', type=int)
     parser.add_argument('--j', type=int)
 
     args = parser.parse_args()
 
-    tcga_matrix = args.tcga_matrix[args.j]
+    tcga_matrix = args.tcga_matrix[args.i]
 
     d0,d1 = os.path.basename(tcga_matrix).split('_')[0].split('-')
     if d0 > d1:
         import sys
         sys.exit()
 
-    bcl_matrix = os.path.join(args.bcl_matrix_dir, '{}-{}_matrix.dat'.format(d0,d1))
+    bcl_matrix = os.path.join(
+        args.bcl_matrix_dir, '{}-{}_matrix_{}.dat'.format(d0, d1, args.j)
+    )
     assert os.path.exists(bcl_matrix)
 
 
-    tcga_label_files = {os.path.basename(lf).split('_')[2]:lf for lf in args.tcga_labels}
-    bcl_label_files = {os.path.basename(lf).split('_')[2]:lf for lf in args.bcl_labels}
+    tcga_label_files = {os.path.basename(lf)[:-4].split('_')[2]:lf for lf in args.tcga_labels}
+    bcl_label_files = {os.path.basename(lf)[:-4].split('_')[2]:lf for lf in args.bcl_labels}
 
     with open(tcga_label_files[d0]) as f:
-        tcga_d0_genes = sorted({line.strip() for line in f})
+        rdr = csv.reader(f, delimiter='\t')
+        tcga_d0_genes = sorted({r[0] for r in itertools.islice(rdr, 1, None)})
 
     with open(bcl_label_files[d0]) as f:
-        bcl_d0_genes = sorted({line.strip() for line in f})
+        rdr = csv.reader(f, delimiter='\t')
+        bcl_d0_genes = sorted({r[0] for r in itertools.islice(rdr, 1, None)})
 
     if d0 != d1:
         with open(tcga_label_files[d1]) as f:
-            tcga_d1_genes = sorted({line.strip() for line in f})
+            rdr = csv.reader(f, delimiter='\t')
+            tcga_d1_genes = sorted({r[0] for r in itertools.islice(rdr, 1, None)})
 
         with open(bcl_label_files[d1]) as f:
-            bcl_d1_genes = sorted({line.strip() for line in f})
+            rdr = csv.reader(f, delimiter='\t')
+            bcl_d1_genes = sorted({r[0] for r in itertools.islice(rdr, 1, None)})
     else:
         tcga_d1_genes = tcga_d0_genes
         bcl_d1_genes = bcl_d0_genes
@@ -104,5 +111,5 @@ if __name__ == '__main__':
     proc_file(tcga_matrix, bcl_matrix,
               tcga_d0_genes, tcga_d1_genes,
               bcl_d0_genes, bcl_d1_genes,
-              os.path.join(args.output_dir, '{}-{}.txt'.format(d0, d1)),
+              os.path.join(args.output_dir, '{}-{}_{}.txt'.format(d0, d1, args.j)),
               same_d=(d0 == d1))

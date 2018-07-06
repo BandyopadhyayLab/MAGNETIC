@@ -1,84 +1,73 @@
 import argparse
 import csv
 import os
-import re
-
-from collections import defaultdict
 
 import numpy as np
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--matrix', nargs='+', help='Correlation matrices')
-    parser.add_argument('--enrichment', nargs='+',
-                        help='Enrichment files. The filenames matter!')
-    parser.add_argument('--i', type=int, default=None)
-    parser.add_argument('--output')
+    parser.add_argument('--enrichment_dir', help='Location of enrichment files')
+    parser.add_argument('--i', type=int)
+    parser.add_argument('--output_dir')
 
     args = parser.parse_args()
 
-    fnre = re.compile(r'^(.+-.+)_matrix_(?:(n)egative_)?enrichment.txt', flags=re.I)
-    get_f = lambda fn: fnre.match(os.path.basename(fn)).groups()
+    matrix_file = args.matrix[args.i]
+    matrix_base = os.path.splitext(os.path.basename(matrix_file))[0]
 
-    fns = {get_f(fn): [(float(row['Bin']), float(row['Enrichment_median']))
-                       for row in csv.DictReader(open(fn), delimiter='\t')]
-           for fn in args.enrichment}
+    positive_enrichment_file = os.path.join(
+        args.enrichment_dir, '{}_enrichment.txt'.format(matrix_base)
+    )
+    negative_enrichment_file = os.path.join(
+        args.enrichment_dir, '{}_negative_enrichment.txt'.format(matrix_base)
+    )
 
-    all_evals = dict()
-    bins = defaultdict(list)
+    output_file = os.path.join(
+        args.output_dir, '{}_evalues.dat'.format(matrix_base)
+    )
 
-    for d,n in fns:
-        if n is None:
-            assert [b for b, e in fns[d, n]] == sorted([b for b, e in fns[d, n]])
+    with open(positive_enrichment_file) as f:
+       pos_enr = [(float(row['Bin']), float(row['Enrichment_median']))
+                  for row in csv.DictReader(f, delimiter='\t')]
+
+    with open(negative_enrichment_file) as f:
+        neg_enr = [(float(row['Bin']), float(row['Enrichment_median']))
+                   for row in csv.DictReader(f, delimiter='\t')]
+
+    assert [b for b,e in pos_enr] == sorted([b for b,e in pos_enr])
+    assert [b for b,e in neg_enr] == sorted([b for b,e in neg_enr], reverse=True)
+
+    bins = np.array(sorted([b for enr in (neg_enr, pos_enr) for b,e in enr]))
+
+    all_evals = [max(neg_enr[0][1], 0.5)]
+
+    for b,e in neg_enr[1:]:
+        all_evals.append(max(e, all_evals[-1]))
+    all_evals = all_evals[::-1]
+
+    all_evals.append(max(pos_enr[0][1], 0.5))
+    for b,e in pos_enr[1:]:
+        all_evals.append(max(e, all_evals[-1]))
+
+    d_evalues = np.log(all_evals)
+
+    zero_val = d_evalues[bins == 0.0].mean()
+
+    input_data = np.fromfile(matrix_file, dtype=np.float64)
+
+    for i in xrange(input_data.size):
+        if input_data[i] < 0.0:
+            input_data[i] = d_evalues[(bins < input_data[i]).sum()]
+        elif input_data[i] > 0.0:
+            input_data[i] = d_evalues[(bins <= input_data[i]).sum() - 1]
         else:
-            assert [b for b, e in fns[d, n]] == sorted([b for b, e in fns[d, n]], reverse=True)
+            input_data[i] = zero_val
 
-        bins[d].extend(b for b, e in fns[d, n])
+    with open(output_file, 'wb') as OUT:
+        input_data.tofile(OUT)
 
-    for d in bins:
-        bins[d].sort()
-        all_evals[d] = [fns[d, 'n'][0][1]]
-
-        for b, e in fns[d, 'n'][1:]:
-            all_evals[d].append(max(e, all_evals[d][-1]))
-        all_evals[d] = all_evals[d][::-1]
-
-        all_evals[d].append(fns[d, None][0][1])
-        for b, e in fns[d, None][1:]:
-            all_evals[d].append(max(e, all_evals[d][-1]))
-
-    all_bins = {tuple(bins[d]) for d in bins}
-
-    assert len(all_bins) == 1
-    all_bins = np.array(all_bins.pop())
-
-    assert all((len(all_evals[d]) == len(all_bins)) for d in all_evals)
-
-    evalues = {d:np.log(all_evals[d]) for d in all_evals}
-
-    if args.i is not None:
-        matrix_files = [args.matrix[args.i]]
-    else:
-        matrix_files = args.matrix
-
-
-    for input_file in matrix_files:
-        d = os.path.basename(input_file).split('_')[0]
-
-        d_evalues = evalues[d]
-        zero_val = d_evalues[all_bins == 0.0].mean()
-
-        input_data = np.fromfile(input_file, dtype=np.float32)
-
-        for i in xrange(input_data.size):
-            if input_data[i] < 0.0:
-                input_data[i] = d_evalues[(all_bins < input_data[i]).sum()]
-            elif input_data[i] > 0.0:
-                input_data[i] = d_evalues[(all_bins <= input_data[i]).sum() - 1]
-            else:
-                input_data[i] = zero_val
-
-        with open(args.output.format(d), 'wb') as OUT:
-            input_data.tofile(OUT)
+if __name__ == '__main__':
+    main()

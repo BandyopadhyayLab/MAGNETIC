@@ -1,10 +1,12 @@
 # coding: utf-8
 import argparse
+import csv
 import gzip
 import os
 import itertools
 
 import numpy as np
+
 
 def grouper(iterable, n, fillvalue=None):
     """Collect data into fixed-length chunks or blocks"""
@@ -13,7 +15,7 @@ def grouper(iterable, n, fillvalue=None):
     return itertools.izip_longest(fillvalue=fillvalue, *args)
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('input', nargs="+")
@@ -30,9 +32,11 @@ if __name__ == '__main__':
 
     labels = dict()
     for label_file in args.labels:
-        d1 = os.path.basename(label_file).split('_')[2]
+        d1 = os.path.basename(label_file[:-4]).split('_')[2]
         with open(label_file) as f:
-            labels[d1] = {line.strip():i for i,line in enumerate(f)}
+            rdr = csv.reader(f, delimiter='\t')
+            rdr.next()
+            labels[d1] = {r[0]:i for i,r in enumerate(rdr)}
 
     label_u = sorted(reduce(set.union, labels.values(), set()))
 
@@ -40,7 +44,7 @@ if __name__ == '__main__':
     for input_file in args.input:
         d1,d2 = os.path.basename(input_file).split('_')[0].split('-')
 
-        mmaps[(d1,d2)] = np.memmap(input_file, dtype=np.float32,
+        mmaps[(d1,d2)] = np.memmap(input_file, dtype=np.float64,
                                    mode='r', shape=(len(labels[d1]), len(labels[d2])))
 
     dtypes = list(enumerate(sorted(reduce(set.union, mmaps, set()))))
@@ -80,3 +84,7 @@ if __name__ == '__main__':
 
             if lines:
                 print >> OUT, '\n'.join(lines)
+
+
+if __name__ == '__main__':
+    main()

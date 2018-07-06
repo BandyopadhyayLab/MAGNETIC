@@ -24,10 +24,15 @@ if __name__ == '__main__':
     parser.add_argument('--labels', nargs='+')
     parser.add_argument('--output')
     parser.add_argument('--i', type=int)
+    parser.add_argument('--j', type=int, default=0)
+
+    parser.add_argument('--p', type=float)
 
     args = parser.parse_args()
 
-    test = args.output.format('blah', 'blah')
+    test = args.output.format('blah', 'blah', args.p, args.j)
+
+    np.random.seed(args.j)
 
     dat_1,dat_2 = list(itertools.combinations_with_replacement(sorted(args.input), 2))[args.i]
     input_1,input_2 = list(itertools.combinations_with_replacement(sorted(args.labels), 2))[args.i]
@@ -41,12 +46,12 @@ if __name__ == '__main__':
 
     h1,labels1 = read_dtype_file(input_1)
     n_d1 = len(labels1)
-    data1 = np.memmap(dat_1, mode='r', dtype=np.float32, shape=(n_d1, len(h1)))
+    data1 = np.memmap(dat_1, mode='r', dtype=np.float64, shape=(n_d1, len(h1)))
 
     if d1 != d2:
         h2,labels2 = read_dtype_file(input_2)
         n_d2 = len(labels2)
-        data2 = np.memmap(dat_2, mode='r', dtype=np.float32, shape=(n_d2, len(h2)))
+        data2 = np.memmap(dat_2, mode='r', dtype=np.float64, shape=(n_d2, len(h2)))
 
         h_int = set(h1) & set(h2)
         h1_idx = np.array([(c in h_int) for c in h1])
@@ -58,22 +63,35 @@ if __name__ == '__main__':
         data2 = data2[:, h2_idx]
         assert data1.shape[1] == data2.shape[1]
 
-        nz1 = np.any(data1 != 0.0, 1)
-        nz2 = np.any(data2 != 0.0, 1)
+        if args.p < 1.0:
+            n_sub = int(np.round(args.p * data1.shape[1]))
+            subsample = np.random.choice(np.arange(data1.shape[1]), replace=False, size=n_sub)
+        else:
+            subsample = slice(None)
 
-        cc = np.corrcoef(data1[nz1, :], data2[nz2, :])[:n_d1, n_d1:]
+        nz1 = np.any(data1[:, subsample] != 0.0, 1)
+        nz2 = np.any(data2[:, subsample] != 0.0, 1)
 
-        out = np.memmap(args.output.format(d1, d2),
-                        dtype=np.float32, mode='w+', shape=(n_d1, n_d2))
+        cc = np.corrcoef(data1[np.ix_(nz1, subsample)],
+                         data2[np.ix_(nz2, subsample)])[:nz1.sum(), nz1.sum():]
+
+        out = np.memmap(args.output.format(d1, d2, args.p, args.j),
+                        dtype=np.float64, mode='w+', shape=(n_d1, n_d2))
 
         out[np.ix_(nz1, nz2)] = cc
         out.flush()
     else:
-        nz1 = np.any(data1 != 0.0, 1)
-        cc = np.corrcoef(data1[nz1, :])
+        if args.p < 1.0:
+            n_sub = int(np.round(args.p * data1.shape[1]))
+            subsample = np.random.choice(np.arange(data1.shape[1]), replace=False, size=n_sub)
+        else:
+            subsample = slice(None)
 
-        out = np.memmap(args.output.format(d1, d1),
-                        dtype=np.float32, mode='w+', shape=(n_d1, n_d1))
+        nz1 = np.any(data1[:, subsample] != 0.0, 1)
+        cc = np.corrcoef(data1[np.ix_(nz1, subsample)])
+
+        out = np.memmap(args.output.format(d1, d1, args.p, args.j),
+                        dtype=np.float64, mode='w+', shape=(n_d1, n_d1))
 
         out[np.ix_(nz1, nz1)] = cc
         out.flush()

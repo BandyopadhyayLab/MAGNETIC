@@ -32,9 +32,12 @@ def proc_file(input_file, edges, d0_genes, d1_genes, amax, i, output_dir, n_boot
         output_file = os.path.join(output_dir,
                                    os.path.splitext(os.path.basename(input_file))[0] + '_enrichment.txt')
 
+    if os.path.exists(output_file):
+        return
+
     n_d0 = sum(len(v) for v in d0_genes.values())
     n_d1 = sum(len(v) for v in d1_genes.values())
-    input_data = np.fromfile(input_file, dtype=np.float32).reshape((n_d0, n_d1))
+    input_data = np.fromfile(input_file, dtype=np.float64).reshape((n_d0, n_d1))
 
     d0_egenes = {g0 for g0,g1 in edges}
     d1_egenes = {g1 for g0,g1 in edges}
@@ -70,6 +73,8 @@ def proc_file(input_file, edges, d0_genes, d1_genes, amax, i, output_dir, n_boot
 
     assert thresholds.shape[0] % 10 == 0
 
+    das_boot = np.random.randint(0, len(edgelist0), (n_boot, len(edgelist0)))
+
     for i in range(0, thresholds.shape[0], 10):
         # counts: number of network edges above each threshold
         counts = np.zeros((n_boot, 10), dtype=int)
@@ -77,7 +82,7 @@ def proc_file(input_file, edges, d0_genes, d1_genes, amax, i, output_dir, n_boot
 
         # bootstrap n_boot different edge lists
         for n in range(n_boot):
-            edgeboot = np.random.randint(0, len(edgelist0), len(edgelist0))
+            edgeboot = das_boot[n, :]
 
             counts[n,:] = f_e(input_data[edgelist0[edgeboot, 0], edgelist0[edgeboot, 1]],
                               thresholds[i:i+10]).astype(float)
@@ -132,20 +137,28 @@ if __name__ == '__main__':
 
     input_file = args.input[args.j]
     d0,d1 = os.path.basename(input_file).split('_')[0].split('-')
-    label_files = {os.path.basename(lf).split('_')[2]:lf for lf in args.labels}
+    label_files = {os.path.basename(lf)[:-4].split('_')[2]:lf for lf in args.labels}
 
     with open(label_files[d0]) as f:
+        rdr = csv.reader(f, delimiter='\t')
+        rdr.next()
+        d0_genes = [row[0] for row in rdr]
+        assert d0_genes == sorted(d0_genes)
+
         d0_genes_d = defaultdict(set)
-        d0_genes = {line.strip() for line in f}
-        for i,g in enumerate(sorted(d0_genes)):
+        for i,g in enumerate(d0_genes):
             d0_genes_d[g.split('_')[0]].add(i)
         # d0_genes = {g:i for i,g in enumerate(sorted(d0_genes))}
 
     if d0 != d1:
         with open(label_files[d1]) as f:
+            rdr = csv.reader(f, delimiter='\t')
+            rdr.next()
+            d1_genes = [row[0] for row in rdr]
+            assert d1_genes == sorted(d1_genes)
+
             d1_genes_d = defaultdict(set)
-            d1_genes = {line.strip() for line in f}
-            for i,g in enumerate(sorted(d1_genes)):
+            for i,g in enumerate(d1_genes):
                 d1_genes_d[g.split('_')[0]].add(i)
             # d1_genes = {g:i for i,g in enumerate(sorted(d1_genes))}
     else:
